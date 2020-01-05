@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,11 +14,18 @@ import (
 func main() {
 	fmt.Println("hello")
 
-	http.HandleFunc("/", handleFunc)
+	http.HandleFunc("/mon", handleNotifierMon)
+	http.HandleFunc("/", handleWsFunc)
 	http.ListenAndServe(":8080", nil)
 }
 
-func handleFunc(w http.ResponseWriter, r *http.Request) {
+func handleNotifierMon(w http.ResponseWriter, r *http.Request) {
+	ret, _ := json.MarshalIndent(DebugInfo(), "", "\t")
+	w.Write(ret)
+	return
+}
+
+func handleWsFunc(w http.ResponseWriter, r *http.Request) {
 	prefix := "ticker_"
 	n := notifier.Default()
 
@@ -59,4 +67,19 @@ func tickerWorker(groupID string, sigChan chan int8, n *notifier.Notifier) error
 		}
 		count++
 	}
+}
+
+// NotifierState describe notifier states
+type NotifierState struct {
+	Sessions map[string][]string `json:"sessions"`
+	Workers  []string            `json:"workers"`
+}
+
+// DebugInfo return debug info for websocket notifier
+func DebugInfo() *NotifierState {
+	state := NotifierState{}
+	n := notifier.Default()
+	state.Sessions = n.SessionManager.ShowSessions()
+	state.Workers = n.ShowWorkers()
+	return &state
 }

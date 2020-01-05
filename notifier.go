@@ -2,7 +2,6 @@ package notifier
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
