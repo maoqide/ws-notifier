@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	notifier "github.com/maoqide/ws-notifier"
@@ -20,18 +21,19 @@ func handleFunc(w http.ResponseWriter, r *http.Request) {
 	prefix := "ticker_"
 	n := notifier.Default()
 
-	group := r.RequestURI
+	group := strings.Trim(r.RequestURI, "/")
 	// should be random generated
 	sessionID := "123456"
 
 	groupID := prefix + group
-	n.Notify(group, tickerWorker, time.Hour*24)
-	n.HandleRequestWithKeys(w, r, map[string]interface{}{"group": groupID, "id": group + "_" + sessionID})
+	n.Notify(groupID, tickerWorker, time.Hour*24)
+	n.HandleRequestWithKeys(w, r, map[string]interface{}{"group": groupID, "id": groupID + "_" + sessionID})
 	return
 }
 
 func tickerWorker(groupID string, sigChan chan int8, n *notifier.Notifier) error {
-	worker := fmt.Sprintf("ticker_worker_%d", time.Now().Unix())
+	worker := fmt.Sprintf("ticker_worker_%s_%d", groupID, time.Now().Unix())
+	fmt.Printf("worker: %s\n", worker)
 
 	defer func() {
 		select {
@@ -41,7 +43,7 @@ func tickerWorker(groupID string, sigChan chan int8, n *notifier.Notifier) error
 			log.Printf("ticker worker: %s exit after 3s delaying", worker)
 		}
 	}()
-	fmt.Println("--------")
+	ticker := time.NewTicker(time.Second * 2)
 	count := 0
 	for {
 		fmt.Println(count)
@@ -49,11 +51,10 @@ func tickerWorker(groupID string, sigChan chan int8, n *notifier.Notifier) error
 		case signal := <-sigChan:
 			log.Printf("receice stop signal %d for ticker worker: %s", signal, worker)
 			return nil
-		default:
-			time.Sleep(2)
+		case <-ticker.C:
 			err := n.GroupBroadcast([]byte(fmt.Sprintf("%s: %d", groupID, count)), groupID)
 			if err != nil {
-				fmt.Printf("====%v", err)
+				log.Printf("err: %v", err)
 			}
 		}
 		count++

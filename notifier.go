@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -20,7 +21,6 @@ type NotifyMessage struct {
 	Code    int32
 	Message string
 	Data    interface{}
-	websocket.Conn
 }
 
 type workerFunc func(string, chan int8, *Notifier) error
