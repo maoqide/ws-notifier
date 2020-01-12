@@ -1,0 +1,1 @@
+continuous pushing specific message to a group using ticker.
