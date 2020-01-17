@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"gopkg.in/olahol/melody.v1"
+	"github.com/maoqide/melody"
 
 	"github.com/maoqide/ws-notifier/sessionmanager"
 )
@@ -16,10 +16,10 @@ var notifier = New()
 
 // NotifyMessage is common struct for notifier
 type NotifyMessage struct {
-	Type    string
-	Code    int32
-	Message string
-	Data    interface{}
+	Type    string      `json:"type"`
+	Code    int32       `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
 }
 
 type workerFunc func(string, chan int8, *Notifier) error
@@ -29,7 +29,7 @@ type Notifier struct {
 	SessionManager *sessionmanager.SessionManager
 	Melody         *melody.Melody
 	workers        map[string]chan int8
-	lock           *sync.Mutex
+	lock           *sync.RWMutex
 }
 
 // Default return default initialized notifier, recommended.
@@ -49,7 +49,15 @@ func New() *Notifier {
 
 	sm := sessionmanager.New()
 	m.HandleConnect(func(s *melody.Session) {
-		sm.Join(s.Keys["group"].(string), s)
+		g, exists := s.Get("group")
+		if !exists {
+			return
+		}
+		sm.Join(g.(string), s)
+		if v, ok := s.Get("message"); ok {
+			s.Write([]byte(v.(string)))
+			s.Del("message")
+		}
 	})
 
 	m.HandleMessage(func(s *melody.Session, msg []byte) {
@@ -57,7 +65,11 @@ func New() *Notifier {
 	m.HandlePong(func(s *melody.Session) {
 	})
 	m.HandleDisconnect(func(s *melody.Session) {
-		sm.Release(s.Keys["group"].(string), s)
+		g, exists := s.Get("group")
+		if !exists {
+			s.Close()
+		}
+		sm.Release(g.(string), s)
 	})
 	// m.Config.PongWait = 600 * time.Second
 	// m.Config.PingPeriod = 601 * time.Second
@@ -65,7 +77,7 @@ func New() *Notifier {
 		Melody:         m,
 		SessionManager: sm,
 		workers:        make(map[string]chan int8),
-		lock:           new(sync.Mutex),
+		lock:           new(sync.RWMutex),
 	}
 }
 
@@ -83,14 +95,14 @@ func (n *Notifier) Notify(groupID string, f workerFunc, timeout time.Duration) e
 		for {
 			select {
 			case <-n.workers[groupID]:
-				delete(n.workers, groupID)
+				n.ReleaseWorker(groupID)
 				// close all sessions of the group if worker exited, reconnection is needed from frontend.
 				n.CloseGroupWithMsg(groupID, []byte{})
 				return
 			case <-timer.C:
 				n.workers[groupID] <- 1
 			// kill worker goroutine when all session closed.
-			case <-time.Tick(time.Second * 5):
+			case <-time.Tick(time.Second):
 				if n.GroupLen(groupID) == 0 {
 					n.workers[groupID] <- 2
 				}
@@ -104,7 +116,7 @@ func (n *Notifier) Notify(groupID string, f workerFunc, timeout time.Duration) e
 func (n *Notifier) ReleaseWorker(groupID string) {
 	n.lock.Lock()
 	defer n.lock.Unlock()
-	if _, ok := n.workers[groupID]; ok {
+	if _, ok := n.workers[groupID]; !ok {
 		return
 	}
 	close(n.workers[groupID])
@@ -119,8 +131,8 @@ func (n *Notifier) GroupBroadcast(msg []byte, groupID string) error {
 	}
 
 	return n.Melody.BroadcastFilter(msg, func(s *melody.Session) bool {
-		group, ok := s.Keys["group"]
-		return ok && (group.(string) == groupID)
+		group, exists := s.Get("group")
+		return exists && (group.(string) == groupID)
 	})
 }
 
@@ -190,6 +202,8 @@ func FormatCloseMessage(closeCode int, text string) []byte {
 
 // ShowWorkers shows all workers
 func (n *Notifier) ShowWorkers() []string {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
 	res := make([]string, 0)
 	for w := range n.workers {
 		res = append(res, w)

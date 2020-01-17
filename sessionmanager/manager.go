@@ -3,7 +3,7 @@ package sessionmanager
 import (
 	"sync"
 
-	"gopkg.in/olahol/melody.v1"
+	"github.com/maoqide/melody"
 )
 
 // SessionManager manage sessions
@@ -59,6 +59,8 @@ func New() *SessionManager {
 // ShowSessions shows all sessions
 func (sm *SessionManager) ShowSessions() map[string][]string {
 	res := make(map[string][]string)
+	sm.rwLock.RLock()
+	defer sm.rwLock.RUnlock()
 	for group, sessions := range sm.sessionGroup {
 		res[group] = make([]string, 0)
 		for s := range sessions {
